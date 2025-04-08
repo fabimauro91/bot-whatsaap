@@ -1,0 +1,1 @@
+ALTER TABLE whatsapp_instances MODIFY COLUMN phone_number VARCHAR(255) NULL; 

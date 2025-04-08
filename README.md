@@ -1,18 +1,58 @@
-# Bot de WhatsApp
+# Bot de WhatsApp Avanzado
 
-Este es un bot simple para WhatsApp Web utilizando la biblioteca whatsapp-web.js.
+Este es un bot avanzado para WhatsApp Web que utiliza whatsapp-web.js con características adicionales como API REST, integración con base de datos y más.
+
+## Características
+
+- 🤖 Bot de WhatsApp básico
+- 🌐 Servidor API REST integrado
+- 💾 Integración con base de datos
+- 🔐 Manejo de variables de entorno
+- 📁 Estructura modular del proyecto
+- 🎨 Múltiples versiones del bot (normal, visual, gemini)
 
 ## Requisitos
 
 - Node.js (versión 12 o superior)
 - NPM (gestor de paquetes de Node.js)
+- MySQL/MariaDB para la base de datos
 - Un teléfono con WhatsApp instalado
+
+## Estructura del Proyecto
+
+```
+├── config/               # Configuraciones del proyecto
+├── models/              # Modelos de la base de datos
+├── .wwebjs_auth/        # Archivos de autenticación de WhatsApp
+├── api-server.js        # Servidor API REST
+├── index.js            # Bot principal
+├── index-gemini.js     # Versión con integración Gemini
+├── index-visual.js     # Versión con características visuales
+└── sync-db.js          # Sincronización de base de datos
+```
 
 ## Instalación
 
-1. Clona o descarga este repositorio
-2. Ejecuta `npm install` para instalar las dependencias
-3. Ejecuta `node index.js` para iniciar el bot
+1. Clona este repositorio:
+```bash
+git clone https://github.com/fabimauro91/bot-whatsaap.git
+cd bot-whatsaap
+```
+
+2. Instala las dependencias:
+```bash
+npm install
+```
+
+3. Crea y configura el archivo `.env` con las siguientes variables:
+```env
+# Configuración de la Base de Datos
+DB_HOST=tu_host
+DB_USER=tu_usuario
+DB_PASSWORD=tu_contraseña
+DB_DATABASE=tu_base_de_datos
+
+# Configuración del
 
 ## Uso
 
