@@ -24,6 +24,10 @@ const Sucursal = sequelize.define('Sucursal', {
     type: DataTypes.BIGINT.UNSIGNED,
     allowNull: false
   },
+  id_users: {
+    type: DataTypes.BIGINT.UNSIGNED,
+    allowNull: false
+  },
   nombre_sucursal: {
     type: DataTypes.STRING(100),
     allowNull: true,

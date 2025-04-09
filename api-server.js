@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const WhatsappInstance = require('./models/WhatsappInstance');
 const Sucursal = require('./models/Sucursal');
 const cors = require('cors');
+const Agente = require('./agente.js');
 
 // Desactivar logs de Sequelize
 const { Sequelize } = require('sequelize');
@@ -132,6 +133,9 @@ async function createWhatsAppInstance(codigo_sucursal) {
         const existingInstance = await WhatsappInstance.findOne({
             where: { codigo_sucursal: codigo_sucursal }
         });
+        const agente = new Agente();
+        // Cargar productos para el agente
+        await agente.cargarProductosDesdeAPI(sucursal.id_users);
 
         if (existingInstance) {
             // Si la instancia está autenticada, mantener el mismo ID
@@ -473,10 +477,13 @@ async function createWhatsAppInstance(codigo_sucursal) {
 
             console.log(`Mensaje recibido en instancia ${instance.id} de ${message.from}: ${message.body}`);
             try {
-                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-                const result = await model.generateContent(message.body);
-                const response = await result.response;
-                await message.reply(response.text());
+               // Primero intentar procesar como consulta de producto
+               const productoEncontrado = await agente.consultarGeminiConProductos(message, genAI);
+               if (!productoEncontrado) {
+                // Si no es consulta de producto, procesar como mensaje general
+                const respuesta = await agente.consultarGemini(message.body, genAI);
+                await message.reply(respuesta);
+                }
                 console.log(`Respuesta enviada en instancia ${instance.id}`);
             } catch (error) {
                 console.error(`Error procesando mensaje en instancia ${instance.id}:`, error);
@@ -617,7 +624,8 @@ async function createWhatsAppInstance(codigo_sucursal) {
             connectionStatus,
             createdAt: new Date(),
             codigo_sucursal: codigo_sucursal,
-            dbInstance: instance
+            dbInstance: instance,
+            agente: agente  // Agregar el agente a la instancia
         });
 
         return {
@@ -659,6 +667,10 @@ async function loadExistingInstances() {
                     console.log(`   ❌ Sucursal ${instance.codigo_sucursal} no encontrada en la base de datos`);
                     continue;
                 }
+
+                // Crear y configurar el agente
+                const agente = new Agente();
+                await agente.cargarProductosDesdeAPI(sucursal.id_users);
 
                 console.log(`   ✓ Sucursal verificada: ${sucursal.codigo_sucursal} - ${sucursal.nombre_sucursal}`);
 
@@ -807,10 +819,17 @@ async function loadExistingInstances() {
                             
                             console.log(`Mensaje recibido en instancia ${instance.id} de ${message.from}: ${message.body}`);
                             try {
-                                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-                                const result = await model.generateContent(message.body);
-                                const response = await result.response;
-                                await message.reply(response.text());
+                                // const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                                // const result = await model.generateContent(message.body);
+                                // const response = await result.response;
+                                // await message.reply(response.text());
+                                const productoEncontrado = await agente.consultarGeminiConProductos(message, genAI);
+                        
+                                if (!productoEncontrado) {
+                                    const respuesta = await agente.consultarGemini(message.body, genAI);
+                                    await message.reply(respuesta);
+                                }
+
                                 console.log(`Respuesta enviada en instancia ${instance.id}`);
                             } catch (error) {
                                 console.error(`Error procesando mensaje en instancia ${instance.id}:`, error);
@@ -907,7 +926,8 @@ async function loadExistingInstances() {
                         connectionStatus,
                         createdAt: new Date(),
                         codigo_sucursal: instance.codigo_sucursal,
-                        dbInstance: instance
+                        dbInstance: instance,
+                        agente: agente  // Agregar el agente a la instancia
                     });
                     
                     console.log(`   ✓ Reconexión iniciada exitosamente`);
@@ -1112,6 +1132,32 @@ app.post('/api/instance/:id/send', async (req, res) => {
         res.json({
             success: true,
             message: 'Message sent successfully'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Endpoint para actualizar productos de una instancia
+app.post('/api/instance/:id/update-products', async (req, res) => {
+    try {
+        const instance = instances.get(req.params.id);
+        
+        if (!instance) {
+            return res.status(404).json({
+                success: false,
+                error: 'Instancia no encontrada'
+            });
+        }
+
+        await instance.agente.cargarProductosDesdeAPI(instance.codigo_sucursal);
+        
+        res.json({
+            success: true,
+            message: 'Productos actualizados correctamente'
         });
     } catch (error) {
         res.status(500).json({
