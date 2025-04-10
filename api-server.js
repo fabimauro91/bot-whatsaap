@@ -484,6 +484,12 @@ async function createWhatsAppInstance(codigo_sucursal) {
         client.on('message', async (message) => {
             if (message.fromMe) return;
 
+            // Verificar si el mensaje viene de un grupo 
+            if (message. from . include ( '@g.us' )) {
+                console . log ( 'Mensaje de grupo ignorado' );
+                devolver ;
+            
+            }
             console.log(`Mensaje recibido en instancia ${instance.id} de ${message.from}: ${message.body}`);
             try {
                 // Primero verificar si está en proceso de pedido
@@ -501,7 +507,7 @@ async function createWhatsAppInstance(codigo_sucursal) {
                     return; // Si se mostró información de producto, no continuar
                 }
                 // Si no es nada de lo anterior, proceder con la consulta general
-                const respuestaIA = await agente.consultarGemini(message.body, genAI);
+                const respuestaIA = await agente.consultarGemini(message, genAI);
                 await client.sendMessage(message.from, respuestaIA);
                 
             //         // Primero intentar procesar como consulta de producto
@@ -878,7 +884,7 @@ async function loadExistingInstances() {
                                     return; // Si se mostró información de producto, no continuar
                                 }
                                 // Si no es nada de lo anterior, proceder con la consulta general
-                                const respuestaIA = await agente.consultarGemini(message.body, genAI);
+                                const respuestaIA = await agente.consultarGemini(message, genAI);
                                 await client.sendMessage(message.from, respuestaIA);
 
                                 console.log(`Respuesta enviada en instancia ${instance.id}`);

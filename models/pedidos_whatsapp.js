@@ -21,6 +21,10 @@ const PedidosWhatsapp = sequelize.define('PedidosWhatsapp', {
     autoIncrement: true,
     field: 'id'
   },
+  numero_pedido: {
+    type: DataTypes.BIGINT(20),
+    allowNull: true
+},
   codigo_sucursal: {
     type: DataTypes.BIGINT.UNSIGNED,
     allowNull: false,
