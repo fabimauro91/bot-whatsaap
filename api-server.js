@@ -8,6 +8,7 @@ const Sucursal = require('./models/Sucursal');
 const cors = require('cors');
 const Agente = require('./agente.js');
 
+
 // Desactivar logs de Sequelize
 const { Sequelize } = require('sequelize');
 Sequelize.options.logging = false;
@@ -133,9 +134,7 @@ async function createWhatsAppInstance(codigo_sucursal) {
         const existingInstance = await WhatsappInstance.findOne({
             where: { codigo_sucursal: codigo_sucursal }
         });
-        const agente = new Agente();
-        // Cargar productos para el agente
-        await agente.cargarProductosDesdeAPI(sucursal.id_users);
+        
 
         if (existingInstance) {
             // Si la instancia está autenticada, mantener el mismo ID
@@ -212,6 +211,16 @@ async function createWhatsAppInstance(codigo_sucursal) {
             },
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         });
+
+        const agente = new Agente(client);
+        // Cargar productos para el agente
+        await agente.cargarProductosDesdeAPI(sucursal.id_users);
+
+        // Configurar limpieza automática de pedidos antiguos
+        setInterval(() => {
+            agente.limpiarPedidosAntiguos();
+        }, 5 * 60 * 1000); // Cada 5 minutos
+
 
         // Sobrescribir los métodos para evitar errores en Windows
         client.logout = async function() {
@@ -477,13 +486,31 @@ async function createWhatsAppInstance(codigo_sucursal) {
 
             console.log(`Mensaje recibido en instancia ${instance.id} de ${message.from}: ${message.body}`);
             try {
-               // Primero intentar procesar como consulta de producto
-               const productoEncontrado = await agente.consultarGeminiConProductos(message, genAI);
-               if (!productoEncontrado) {
-                // Si no es consulta de producto, procesar como mensaje general
-                const respuesta = await agente.consultarGemini(message.body, genAI);
-                await message.reply(respuesta);
+                // Primero verificar si está en proceso de pedido
+                if (await agente.procesarDatosCliente(message)) {
+                    return; // Si está en proceso de pedido, no continuar con otras funciones
                 }
+                // Verificar si es una solicitud de compra
+                const esCompra = await agente.procesarSolicitudCompra(message, genAI);
+                if (esCompra) {
+                    return; // Si se inició proceso de compra, no continuar
+                }
+                // Verificar si es una consulta sobre producto
+                const esConsultaProducto = await agente.consultarGeminiConProductos(message, genAI);
+                if (esConsultaProducto) {
+                    return; // Si se mostró información de producto, no continuar
+                }
+                // Si no es nada de lo anterior, proceder con la consulta general
+                const respuestaIA = await agente.consultarGemini(message.body, genAI);
+                await client.sendMessage(message.from, respuestaIA);
+                
+            //         // Primero intentar procesar como consulta de producto
+            //    const productoEncontrado = await agente.consultarGeminiConProductos(message, genAI);
+            //    if (!productoEncontrado) {
+            //     // Si no es consulta de producto, procesar como mensaje general
+            //     const respuesta = await agente.consultarGemini(message.body, genAI);
+            //     await message.reply(respuesta);
+            //     }
                 console.log(`Respuesta enviada en instancia ${instance.id}`);
             } catch (error) {
                 console.error(`Error procesando mensaje en instancia ${instance.id}:`, error);
@@ -668,9 +695,7 @@ async function loadExistingInstances() {
                     continue;
                 }
 
-                // Crear y configurar el agente
-                const agente = new Agente();
-                await agente.cargarProductosDesdeAPI(sucursal.id_users);
+               
 
                 console.log(`   ✓ Sucursal verificada: ${sucursal.codigo_sucursal} - ${sucursal.nombre_sucursal}`);
 
@@ -703,6 +728,14 @@ async function loadExistingInstances() {
                         },
                         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
                     });
+
+                     // Crear y configurar el agente
+                    const agente = new Agente(client);
+                    await agente.cargarProductosDesdeAPI(sucursal.id_users);
+                     // Configurar limpieza automática de pedidos antiguos
+                    setInterval(() => {
+                        agente.limpiarPedidosAntiguos();
+                    }, 5 * 60 * 1000); // Cada 5 minutos
 
                     // Sobrescribir los métodos para evitar errores en Windows
                     client.logout = async function() {
@@ -823,12 +856,30 @@ async function loadExistingInstances() {
                                 // const result = await model.generateContent(message.body);
                                 // const response = await result.response;
                                 // await message.reply(response.text());
-                                const productoEncontrado = await agente.consultarGeminiConProductos(message, genAI);
+                                // const productoEncontrado = await agente.consultarGeminiConProductos(message, genAI);
                         
-                                if (!productoEncontrado) {
-                                    const respuesta = await agente.consultarGemini(message.body, genAI);
-                                    await message.reply(respuesta);
+                                // if (!productoEncontrado) {
+                                //     const respuesta = await agente.consultarGemini(message.body, genAI);
+                                //     await message.reply(respuesta);
+                                // }
+
+                                 // Primero verificar si está en proceso de pedido
+                                if (await agente.procesarDatosCliente(message)) {
+                                    return; // Si está en proceso de pedido, no continuar con otras funciones
                                 }
+                                // Verificar si es una solicitud de compra
+                                const esCompra = await agente.procesarSolicitudCompra(message, genAI);
+                                if (esCompra) {
+                                    return; // Si se inició proceso de compra, no continuar
+                                }
+                                // Verificar si es una consulta sobre producto
+                                const esConsultaProducto = await agente.consultarGeminiConProductos(message, genAI);
+                                if (esConsultaProducto) {
+                                    return; // Si se mostró información de producto, no continuar
+                                }
+                                // Si no es nada de lo anterior, proceder con la consulta general
+                                const respuestaIA = await agente.consultarGemini(message.body, genAI);
+                                await client.sendMessage(message.from, respuestaIA);
 
                                 console.log(`Respuesta enviada en instancia ${instance.id}`);
                             } catch (error) {
