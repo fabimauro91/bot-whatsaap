@@ -1230,6 +1230,118 @@ app.post('/api/instance/:id/update-products', async (req, res) => {
     }
 });
 
+// Endpoint para cambiar el nombre de la tienda
+app.put('/api/:id/tienda/nombre', async (req, res) => {
+    try {
+        const instance = instances.get(req.params.id);
+        const { nombre } = req.body;
+
+        // Validar que se proporcionó un nombre
+        if (!nombre || typeof nombre !== 'string' || nombre.trim().length === 0) {
+            return res.status(400).json({
+                error: 'El nombre de la tienda es requerido y debe ser una cadena de texto válida'
+            });
+        }
+
+        // Llamar al método del agente
+        await instance.agente.setNombreTienda(nombre.trim());
+
+        res.json({
+            success: true,
+            mensaje: 'Nombre de la tienda actualizado correctamente',
+            nombreTienda: nombre.trim()
+        });
+
+    } catch (error) {
+        console.error('Error al actualizar nombre de la tienda:', error);
+        res.status(500).json({
+            error: 'Error al actualizar el nombre de la tienda',
+            detalle: error.message
+        });
+    }
+});
+
+// Endpoint para cambiar el nombre del vendedor
+app.put('/api/:id/vendedor/nombre', async (req, res) => {
+    try {
+        const instance = instances.get(req.params.id);
+        const { nombre } = req.body;
+
+        // Validar que se proporcionó un nombre
+        if (!nombre || typeof nombre !== 'string' || nombre.trim().length === 0) {
+            return res.status(400).json({
+                error: 'El nombre del vendedor es requerido y debe ser una cadena de texto válida'
+            });
+        }
+
+        // Llamar al método del agente
+        await instance.agente.setNombreVendedor(nombre.trim());
+
+        res.json({
+            success: true,
+            mensaje: 'Nombre del vendedor actualizado correctamente',
+            nombreVendedor: nombre.trim()
+        });
+
+    } catch (error) {
+        console.error('Error al actualizar nombre del vendedor:', error);
+        res.status(500).json({
+            error: 'Error al actualizar el nombre del vendedor',
+            detalle: error.message
+        });
+    }
+});
+
+app.post('/api/:id/enviar-presentacion', async (req, res) => {
+    try {
+        const instance = instances.get(req.params.id);
+        const { telefono } = req.body;
+
+        // Validar que se proporcionó un número de teléfono
+        if (!telefono) {
+            return res.status(400).json({
+                success: false,
+                error: 'Se requiere un número de teléfono'
+            });
+        }
+
+        // Validar formato del número
+        const numeroLimpio = telefono.replace(/\D/g, '');
+        const numeroRegex = /^\d{10,13}$/;
+        if (!numeroRegex.test(numeroLimpio)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Formato de número de teléfono inválido'
+            });
+        }
+
+        // Verificar si hay productos cargados
+        if (!await instance.agente.productosCache || await instance.agente.productosCache.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'No hay productos cargados en el sistema'
+            });
+        }
+
+        // Enviar mensaje de presentación
+        const resultado = await instance.agente.enviarMensajePresentacion(numeroLimpio);
+
+        res.json({
+            success: true,
+            mensaje: 'Mensaje de presentación enviado exitosamente',
+            detalles: resultado
+        });
+
+    } catch (error) {
+        console.error('Error al enviar mensaje de presentación:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error al enviar mensaje de presentación',
+            detalles: error.message
+        });
+    }
+});
+
 // Puerto del servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

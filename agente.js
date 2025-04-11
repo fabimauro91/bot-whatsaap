@@ -682,6 +682,81 @@ class Agente {
             throw error;
         }
     }
+    async enviarMensajePresentacion(numeroTelefono) {
+        try {
+            // Validar el formato del número de teléfono
+            const numeroLimpio = this.cleanPhoneNumber(numeroTelefono);
+            if (!numeroLimpio) {
+                throw new Error('Número de teléfono inválido');
+            }
+    
+            // Obtener categorías únicas de los productos en cache
+            const categoriasUnicas = new Set();
+            this.productosCache.forEach(producto => {
+                if (producto.id_categoria) {
+                    categoriasUnicas.add(producto.id_categoria);
+                }
+            });
+    
+            // Crear el mensaje de presentación
+            let mensajePresentacion = `*¡Hola! 👋*\n\n`;
+            mensajePresentacion += `Bienvenido a *${this.nombreTienda}* 🏪\n`;
+            mensajePresentacion += `Mi nombre es *${this.nombreVendedor}* y seré tu asesor personal de ventas.\n\n`;
+    
+            // Solo agregar la sección de categorías si hay productos
+            if (categoriasUnicas.size > 0) {
+                mensajePresentacion += `*🛍️ Nuestras Categorías Disponibles:*\n\n`;
+    
+                // Contar productos por categoría
+                const productosPorCategoria = {};
+                this.productosCache.forEach(producto => {
+                    if (producto.id_categoria) {
+                        if (!productosPorCategoria[producto.id_categoria]) {
+                            productosPorCategoria[producto.id_categoria] = 1;
+                        } else {
+                            productosPorCategoria[producto.id_categoria]++;
+                        }
+                    }
+                });
+    
+                // Ordenar categorías por nombre
+                const categoriasOrdenadas = Array.from(categoriasUnicas)
+                    .sort((a, b) => a.localeCompare(b))
+                    .map(categoria => {
+                        const cantidadProductos = productosPorCategoria[categoria] || 0;
+                        return `• *${categoria}* (${cantidadProductos} ${cantidadProductos === 1 ? 'producto' : 'productos'})`;
+                    });
+    
+                // Agregar categorías al mensaje
+                mensajePresentacion += categoriasOrdenadas.join('\n');
+            }
+    
+            mensajePresentacion += `\n\n*¿Cómo puedo ayudarte hoy?*\n`;
+            mensajePresentacion += `• Puedes preguntarme por cualquier categoría\n`;
+            mensajePresentacion += `• Buscar productos específicos\n`;
+            mensajePresentacion += `• O decirme qué estás buscando\n\n`;
+            mensajePresentacion += `¡Estoy aquí para ayudarte a encontrar lo que necesitas! 😊\n\n`;
+            mensajePresentacion += `*💡 Ejemplo:* Puedes escribir "Quiero ver productos de ${Array.from(categoriasUnicas)[0]}"`;
+    
+            // Enviar el mensaje
+            await this.whatsappClient.sendMessage(`${numeroLimpio}@c.us`, mensajePresentacion);
+    
+            // Registrar el inicio de la conversación en el contexto
+            this.actualizarContextoConversacion(numeroLimpio, 
+                '[Inicio de conversación - Mensaje de presentación enviado]');
+    
+            // Retornar éxito
+            return {
+                success: true,
+                mensaje: 'Mensaje de presentación enviado exitosamente',
+                categoriasMostradas: Array.from(categoriasUnicas)
+            };
+    
+        } catch (error) {
+            console.error('Error al enviar mensaje de presentación:', error);
+            throw error;
+        }
+    }
 }
 
 // Exportar la clase
