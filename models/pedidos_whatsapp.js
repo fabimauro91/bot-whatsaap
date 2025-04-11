@@ -41,6 +41,10 @@ const PedidosWhatsapp = sequelize.define('PedidosWhatsapp', {
       key: 'id_producto'
     }
   },
+  id_variacion: {
+    type: DataTypes.BIGINT(20),
+    allowNull: true
+},
   nombre_producto: {
     type: DataTypes.STRING(100),
     allowNull: false
@@ -68,10 +72,21 @@ const PedidosWhatsapp = sequelize.define('PedidosWhatsapp', {
     type: DataTypes.STRING(50),
     allowNull: false,
     defaultValue: 'pendiente'
+  },
+  created_at: {
+      type: DataTypes.DATE,
+      defaultValue: Sequelize.literal('CURRENT_TIMESTAMP')
+  },
+  updated_at: {
+      type: DataTypes.DATE,
+      defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
+      onUpdate: Sequelize.literal('CURRENT_TIMESTAMP')
   }
 }, {
-  tableName: 'pedidos_whatsapp',
-  timestamps: false
+    tableName: 'pedidos_whatsapp',
+    timestamps: true, // Activar timestamps
+    createdAt: 'created_at', // Nombre personalizado para createdAt
+    updatedAt: 'updated_at'  // Nombre personalizado para updatedAt
 });
 
 // Definir la relación con Sucursal

@@ -228,11 +228,32 @@ class Agente {
                     mensajeProducto += `*Descripción:* ${producto.descripcion || 'Sin descripción'}\n`;
                     mensajeProducto += `*Información adicional:* ${producto.informacion_adicional || 'Sin información adicional'}\n`;
                     mensajeProducto += `*Precio:* $${producto.precio_sugerido}\n`;
-                    mensajeProducto += `*Cantidad disponible:* ${producto.cantidad || 'No especificada'}\n\n`;
+                    if (producto.estado_variacion === 1 && producto.variaciones) {
+                        // Agregar sección de variaciones
+                        mensajeProducto += `\n*📋 Variaciones Disponibles:*\n`;
+                        
+                        // Recorrer cada variación
+                        producto.variaciones.forEach((variacion, index) => {
+                            mensajeProducto += `\n*Variación ${index + 1}:*\n`;
+                            mensajeProducto += `   • Talla: ${variacion.talla || 'N/A'}\n`;
+                            mensajeProducto += `   • Color: ${variacion.color || 'N/A'}\n`;
+                            mensajeProducto += `   • Cantidad: ${variacion.cantidad_disponible || 0} unidades\n`;
+                        });
+                    }
+                    else{
+                        mensajeProducto += `*Cantidad disponible:* ${producto.cantidad || 'No especificada'}\n\n`;
+                    }
+                    
                     mensajeProducto += `¿le gustaria obtenerlo?\nSi lo pide hoy, lo pagas cuando llege a su casa con nuestro servicio de contra-entrega`;
 
                     this.actualizarContextoConversacion(mensaje.from, mensajeProducto);
+                    // Primero enviar el mensaje con la información
                     await this.enviarMensaje(mensaje, mensajeProducto);
+                   // Luego enviar las imágenes si existen
+                    if (producto.imagenes && producto.imagenes.length > 0) {
+                        console.log('Producto tiene imágenes, intentando enviar...');
+                        await this.enviarImagenesProducto(mensaje, producto);
+                    }
                     return true;
                 }
             }
@@ -264,6 +285,8 @@ class Agente {
             
             Mensaje del usuario: "${message.body}"
             
+            Ten en cuenta los productos por si el cliente elige una variacion: ${contextoProductos}
+
             Analiza si el mensaje indica una intención de compra. Considera expresiones como:
             - Afirmaciones directas: "quiero comprarlo", "me lo llevo"
             - Preguntas sobre compra: "¿cómo puedo comprarlo?", "¿cómo lo adquiero?"
@@ -275,6 +298,7 @@ class Agente {
             - Pero aun no es una compra si escribe las palabras: "informacion, "detalles", "quiero saber mas". 
 
             Devuelve SOLO el nombre exacto del producto si hay intención de compra.
+            Si hay intención de compra y el producto tiene variacion, se adiciona el nombre el id de la variacion elegida ejemplo (camisa spining | 151).
             Devuelve "0" si no hay clara intención de compra.
 
             Responde ÚNICAMENTE con el nombre del producto o "0". No incluyas explicaciones ni texto adicional.`;
@@ -286,47 +310,49 @@ class Agente {
             console.log(`Respuesta del análisis de intención de compra: "${textoRespuesta}"`);
 
             if (textoRespuesta && textoRespuesta !== "0") {
+
+                // Verificar si la respuesta incluye ID de variación
+                let productoNombre, idVariacion;
+
                 // Buscar el producto en el cache
                 this.actualizarContextoConversacion(message.from, `[Intención de compra detectada para: ${textoRespuesta}]`);
 
+                if (textoRespuesta.includes('|')) {
+                    // Si hay variación, el formato será "nombre_producto|id_variacion"
+                    //[productoNombre, idVariacion] = textoRespuesta.split('|');
+                    [productoNombre, idVariacion] = textoRespuesta.split('|').map(s => s.trim());
+                } else {
+                    productoNombre = textoRespuesta.trim();
+                }
+
                 // Intentar encontrar el producto exacto
                 const producto = this.productosCache.find(p => 
-                    p.nombre_producto.toLowerCase() === textoRespuesta.toLowerCase()
+                    p.nombre_producto.toLowerCase() === productoNombre.toLowerCase()
                 );
-                
-                // // Si no encuentra el producto exacto, buscar por coincidencia parcial
-                // if (!producto) {
-                //     console.log("Buscando producto por coincidencia parcial...");
-                //     for (const p of this.productosCache) {
-                //         if (textoRespuesta.toLowerCase().includes(p.nombre_producto.toLowerCase()) ||
-                //             p.nombre_producto.toLowerCase().includes(textoRespuesta.toLowerCase())) {
-                //             producto = p;
-                //             console.log(`Producto encontrado por coincidencia parcial: ${p.nombre_producto}`);
-                //             break;
-                //         }
-                //     }
-                // }
 
-                // // Si todavía no encuentra producto, buscar el último mencionado en la conversación
-                // if (!producto) {
-                //     console.log("Buscando último producto mencionado en la conversación...");
-                //     for (const p of this.productosCache) {
-                //         if (this.conversacionCache.includes(p.nombre_producto)) {
-                //             producto = p;
-                //             console.log(`Último producto mencionado: ${p.nombre_producto}`);
-                //             // Seguimos buscando para encontrar el más reciente
-                //         }
-                //     }
-                // }
-
-                if (producto) {
-                    console.log(`✓ Iniciando proceso de compra para: ${producto.nombre_producto}`);
-                    // Iniciar proceso de compra
-                    await this.iniciarProcesoCompra(message, producto);
-                    return true; // Indica que se inició proceso de compra
-                }else {
-                    console.log("✗ No se encontró el producto para iniciar la compra");
+                if (!producto) {
+                    console.log("✗ No se encontró el producto:", productoNombre);
+                    return false;
                 }
+            
+                let variacionSeleccionada = null;
+                if (producto.estado_variacion === 1) {
+                    if (!idVariacion) {
+                        await this.enviarMensaje(message, 
+                            "Por favor, especifica la talla y color que deseas del producto.");
+                        return false;
+                    }
+                    
+                    variacionSeleccionada = producto.variaciones.find(v => v.id === parseInt(idVariacion));
+                    if (!variacionSeleccionada) {
+                        await this.enviarMensaje(message, 
+                            "La variación seleccionada no está disponible. Por favor, elige otra.");
+                        return false;
+                    }
+                }
+            
+                await this.iniciarProcesoCompra(message, producto, variacionSeleccionada);
+                return true
             }else {
                 console.log("✗ No se detectó intención de compra");
                 return false; // Indica que no se detectó intención de compra
@@ -364,7 +390,7 @@ class Agente {
     }
     
     // Función para manejar el proceso de compra
-    async iniciarProcesoCompra(message, producto) {
+    async iniciarProcesoCompra(message, producto, variacionSeleccionada)  {
         try {
             
             // Crear objeto de pedido
@@ -372,10 +398,18 @@ class Agente {
                 producto: producto,
                 estado: 'solicitando_datos',
                 timestamp: Date.now(),
-                codigo_sucursal: producto.id_sucursal, // Asumiendo que el producto tiene id_sucursal
+                codigo_sucursal: producto.id_sucursal,
                 id_producto: producto.id_producto,
                 nombre_producto: producto.nombre_producto,
-                telefono: message.from.replace(/\D/g, ''), // Limpia el número de teléfono de caracteres no numéricos
+                telefono: message.from.replace(/\D/g, ''),
+                precio: producto.precio_sugerido,
+                // Información de variación
+                estado_variacion: producto.estado_variacion,
+                id_variacion: variacionSeleccionada ? variacionSeleccionada.id : null,
+                variacion_detalle: variacionSeleccionada ? {
+                    talla: variacionSeleccionada.talla,
+                    color: variacionSeleccionada.color
+                } : null
             };
     
             // Guardar en el contexto del usuario
@@ -385,6 +419,9 @@ class Agente {
              let mensajeSolicitud = `*🛍️ ¡Excelente elección!*\n\n`;
             mensajeSolicitud += `Has seleccionado:\n`;
             mensajeSolicitud += `*${producto.nombre_producto}*\n`;
+            if(producto.estado_variacion===1){
+                mensajeSolicitud += `*${pedido.variacion_detalle}*\n\n`;
+            }
             mensajeSolicitud += `Precio: $${producto.precio_sugerido}\n\n`;
             mensajeSolicitud += `Para finalizar tu compra, necesito algunos datos:\n`;
             mensajeSolicitud += `Sique los siguientes pasos\n\n`;
@@ -450,6 +487,11 @@ class Agente {
             // Procesar según el estado del pedido
             switch (pedido.estado) {
                 case 'solicitando_datos':
+                    if (body.length < 3) {
+                        await this.enviarMensaje(message, 
+                            "Por favor, ingresa un nombre válido (mínimo 3 caracteres)");
+                        return true;
+                    }
                     // Guardar nombre del cliente
                     pedido.nombre_cliente = body;
                     pedido.estado = 'solicitando_correo';
@@ -469,7 +511,7 @@ class Agente {
                 case 'solicitando_direccion':
                     if (mensajeUsuario.length > 5) {  // Verificación simple de longitud de dirección
                     // Guardar nombre del cliente    
-                    pedido.ciudad = body;
+                    pedido.direccion = body;
                     pedido.estado = 'solicitando_ciudad';
                     await this.enviarMensaje(message, `*✅ Direccion registrada*\n\nAhora por favor envía la ciudad de entrega`);
                     return true;
@@ -477,7 +519,7 @@ class Agente {
                         await this.enviarMensaje(message, `Por favor, escribe una dirección completa y válida para poder realizar la entrega.\n\nO escribe "5" para ver otro producto, o "6" para cancelar.`);
                     }
                 case 'solicitando_ciudad':
-                    pedido.direccion = body;
+                    pedido.ciudad = body;
                     pedido.estado = 'completado';
     
                     // Guardar en la base de datos
@@ -489,7 +531,12 @@ class Agente {
                         
                         // Generar resumen del pedido
                         let resumenPedido = `*🎉 ¡Pedido Confirmado!*\n\n`;
-                        resumenPedido += `*Producto:* ${pedido.nombre_producto}\n`;
+                        if(pedido.producto.estado_variacion===1){
+                            resumenPedido += `*Producto:* ${pedido.nombre_producto} ${pedido.variacion_detalle}\n`;
+                        }else{
+                            resumenPedido += `*Producto:* ${pedido.nombre_producto}\n`;
+                        }
+                        
                         resumenPedido += `*Número de pedido:* #${numeroPedido}\n`;
                         resumenPedido += `*Nombre:* ${pedido.nombre_cliente}\n`;
                         resumenPedido += `*Correo:* ${pedido.email}\n`;
@@ -530,17 +577,27 @@ class Agente {
 
     async guardarPedidoEnBD(pedido) {
         try {
-            // Asumiendo que tienes un modelo de Sequelize llamado PedidosWhatsapp
+            // Validar datos requeridos
+            if (!pedido.codigo_sucursal || !pedido.id_producto || !pedido.nombre_producto) {
+                throw new Error('Faltan datos requeridos del producto');
+            }
+
+            if (!pedido.nombre_cliente || !pedido.email || !pedido.direccion) {
+                throw new Error('Faltan datos requeridos del cliente');
+            }
+
             const nuevoPedido = await PedidosWhatsapp.create({
                 codigo_sucursal: pedido.codigo_sucursal,
                 id_producto: pedido.id_producto,
+                id_variacion: pedido.id_variacion, // Nuevo campo
                 numero_pedido: pedido.numeroPedido,
                 nombre_producto: pedido.nombre_producto,
                 nombre_cliente: pedido.nombre_cliente,
                 direccion: pedido.direccion,
+                ciudad:pedido.ciudad,
                 telefono: pedido.telefono,
                 email: pedido.email,
-                estado: 'pendiente'
+                estado: 'pendiente',
             });
     
             return nuevoPedido;
@@ -564,6 +621,65 @@ class Agente {
             if (ahora - pedido.timestamp > tiempoLimite) {
                 this.clientesEnProcesoDePedido.delete(userId);
             }
+        }
+    }
+    async enviarImagenesProducto(message, producto) {
+        try {
+            if (!producto.imagenes || !Array.isArray(producto.imagenes) || producto.imagenes.length === 0) {
+                console.log('El producto no tiene imágenes disponibles');
+                return;
+            }
+    
+            const { MessageMedia } = require('whatsapp-web.js');
+    
+            // Informar al usuario que se están cargando las imágenes
+            await this.enviarMensaje(message, '*📸 Enviando imágenes del producto...*');
+    
+            let imagenesEnviadas = 0;
+            for (const imagen of producto.imagenes) {
+                try {
+                    if (!imagen.url_imagen || typeof imagen.url_imagen !== 'string') {
+                        console.log('URL de imagen no válida:', imagen);
+                        continue;
+                    }
+    
+                    console.log('Cargando imagen desde URL:', imagen.url_imagen);
+                    
+                    try {
+                        const media = await MessageMedia.fromUrl(imagen.url_imagen, {
+                            unsafeMime: true
+                        });
+    
+                        // Usar el método client.sendMessage en lugar de message.reply
+                        await this.whatsappClient.sendMessage(message.from, media);
+                        imagenesEnviadas++;
+    
+                    } catch (mediaError) {
+                        console.error('Error al cargar la imagen:', mediaError);
+                        continue;
+                    }
+    
+                    // Esperar entre envíos
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+                } catch (imgError) {
+                    console.error('Error al procesar imagen:', imgError);
+                    console.error('URL de la imagen:', imagen.url_imagen);
+                    continue;
+                }
+            }
+    
+            if (imagenesEnviadas > 0) {
+                console.log(`✅ Se enviaron ${imagenesEnviadas} imágenes correctamente`);
+            } else {
+                console.log('❌ No se pudo enviar ninguna imagen');
+                await this.enviarMensaje(message, '⚠️ Lo siento, no se pudieron cargar las imágenes del producto en este momento.');
+            }
+    
+        } catch (error) {
+            console.error('Error al enviar imágenes del producto:', error);
+            await this.enviarMensaje(message, '⚠️ Hubo un problema al mostrar las imágenes del producto.');
+            throw error;
         }
     }
 }

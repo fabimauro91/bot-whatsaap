@@ -484,14 +484,14 @@ async function createWhatsAppInstance(codigo_sucursal) {
         client.on('message', async (message) => {
             if (message.fromMe) return;
 
-            // Verificar si el mensaje viene de un grupo 
-            if (message. from . include ( '@g.us' )) {
-                console . log ( 'Mensaje de grupo ignorado' );
-                devolver ;
             
-            }
             console.log(`Mensaje recibido en instancia ${instance.id} de ${message.from}: ${message.body}`);
             try {
+                // Verificar si el mensaje viene de un grupo
+                if (message.from && message.from.includes('@g.us')) {
+                    console.log('Mensaje de grupo ignorado');
+                    return; // Salir de la función si es un mensaje de grupo
+                }
                 // Primero verificar si está en proceso de pedido
                 if (await agente.procesarDatosCliente(message)) {
                     return; // Si está en proceso de pedido, no continuar con otras funciones
@@ -858,6 +858,12 @@ async function loadExistingInstances() {
                             
                             console.log(`Mensaje recibido en instancia ${instance.id} de ${message.from}: ${message.body}`);
                             try {
+
+                                // Verificar si el mensaje viene de un grupo
+                                if (message.from && message.from.includes('@g.us')) {
+                                    console.log('Mensaje de grupo ignorado');
+                                    return; // Salir de la función si es un mensaje de grupo
+                                }
                                 // const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                                 // const result = await model.generateContent(message.body);
                                 // const response = await result.response;
