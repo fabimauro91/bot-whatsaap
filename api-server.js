@@ -1292,9 +1292,18 @@ app.put('/api/:id/vendedor/nombre', async (req, res) => {
     }
 });
 
+// En api-server.js
+
 app.post('/api/:id/enviar-presentacion', async (req, res) => {
     try {
         const instance = instances.get(req.params.id);
+        if (!instance) {
+            return res.status(404).json({
+                success: false,
+                error: 'Instancia no encontrada'
+            });
+        }
+
         const { telefono } = req.body;
 
         // Validar que se proporcionó un número de teléfono
@@ -1315,8 +1324,19 @@ app.post('/api/:id/enviar-presentacion', async (req, res) => {
             });
         }
 
-        // Verificar si hay productos cargados
-        if (!await instance.agente.productosCache || await instance.agente.productosCache.length === 0) {
+        // Verificar estado de la instancia
+        if (instance.connectionStatus !== 'connected' && 
+            instance.connectionStatus !== 'authenticated') {
+            return res.status(503).json({
+                success: false,
+                error: 'La instancia no está conectada',
+                estado: instance.connectionStatus
+            });
+        }
+
+        // Verificar productos
+        if (!instance.agente.productosCache || 
+            instance.agente.productosCache.length === 0) {
             return res.status(400).json({
                 success: false,
                 error: 'No hay productos cargados en el sistema'
@@ -1334,11 +1354,27 @@ app.post('/api/:id/enviar-presentacion', async (req, res) => {
 
     } catch (error) {
         console.error('Error al enviar mensaje de presentación:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Error al enviar mensaje de presentación',
-            detalles: error.message
-        });
+        
+        // Manejar diferentes tipos de errores
+        if (error.message?.includes('Cliente de WhatsApp no inicializado')) {
+            res.status(503).json({
+                success: false,
+                error: 'El servicio de WhatsApp no está listo',
+                detalle: error.message
+            });
+        } else if (error.message?.includes('no está conectado')) {
+            res.status(503).json({
+                success: false,
+                error: 'El servicio de WhatsApp está desconectado',
+                detalle: error.message
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                error: 'Error al enviar mensaje de presentación',
+                detalle: error.message
+            });
+        }
     }
 });
 

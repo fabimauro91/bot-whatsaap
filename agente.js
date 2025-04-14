@@ -295,7 +295,7 @@ class Agente {
             
             Si detectas intención de compra, busca en el contexto de la conversación cuál fue el último producto mencionado.
             
-            - Pero aun no es una compra si escribe las palabras: "informacion, "detalles", "quiero saber mas". 
+            - Pero aun no es una compra si escribe las palabras: "información", "detalles", "saber mas", "conocer". 
 
             Devuelve SOLO el nombre exacto del producto si hay intención de compra.
             Si hay intención de compra y el producto tiene variacion, se adiciona el nombre el id de la variacion elegida ejemplo (camisa spining | 151).
@@ -463,7 +463,7 @@ class Agente {
                 this.clientesEnProcesoDePedido.delete(from);
                 
                 // Añadir al contexto para recordar que el usuario estaba comprando
-                this.actualizarContextoConversacion(message.from,"[Usuario solicitó ver otros productos]");
+                this.actualizarContextoConversacion(from,"[Usuario solicitó ver otros productos]");
 
                 
                 await this.enviarMensaje(message, "¿Qué otro producto te gustaría ver? Puedes decirme la categoría o el nombre del producto que buscas.");
@@ -478,7 +478,7 @@ class Agente {
                 this.clientesEnProcesoDePedido.delete(from);
                 
                 // Añadir al contexto para recordar que el usuario estaba comprando
-                this.actualizarContextoConversacion(message.from, textoRespuesta +"[Usuario canseló el pedido]");
+                this.actualizarContextoConversacion(from, textoRespuesta +"[Usuario canseló el pedido]");
 
                 await this.enviarMensaje(message, "Tu pedido ha sido cancelado. ¿En qué más puedo ayudarte hoy?");
                 
@@ -682,14 +682,32 @@ class Agente {
             throw error;
         }
     }
+    // En agente.js
+
     async enviarMensajePresentacion(numeroTelefono) {
         try {
+            // Verificar que el cliente de WhatsApp esté inicializado
+            if (!this.whatsappClient) {
+                throw new Error('Cliente de WhatsApp no inicializado');
+            }
+
+            // Verificar el estado del cliente
+            const clientState = await this.whatsappClient.getState().catch(() => null);
+            if (!clientState || clientState !== 'CONNECTED') {
+                throw new Error('Cliente de WhatsApp no está conectado');
+            }
+
             // Validar el formato del número de teléfono
             const numeroLimpio = this.cleanPhoneNumber(numeroTelefono);
             if (!numeroLimpio) {
                 throw new Error('Número de teléfono inválido');
             }
-    
+
+            // Verificar que haya productos cargados
+            if (!this.productosCache || this.productosCache.length === 0) {
+                throw new Error('No hay productos cargados');
+            }
+
             // Obtener categorías únicas de los productos en cache
             const categoriasUnicas = new Set();
             this.productosCache.forEach(producto => {
@@ -697,64 +715,92 @@ class Agente {
                     categoriasUnicas.add(producto.id_categoria);
                 }
             });
-    
+
+            if (categoriasUnicas.size === 0) {
+                throw new Error('No hay categorías disponibles');
+            }
+
             // Crear el mensaje de presentación
             let mensajePresentacion = `*¡Hola! 👋*\n\n`;
             mensajePresentacion += `Bienvenido a *${this.nombreTienda}* 🏪\n`;
             mensajePresentacion += `Mi nombre es *${this.nombreVendedor}* y seré tu asesor personal de ventas.\n\n`;
-    
-            // Solo agregar la sección de categorías si hay productos
-            if (categoriasUnicas.size > 0) {
-                mensajePresentacion += `*🛍️ Nuestras Categorías Disponibles:*\n\n`;
-    
-                // Contar productos por categoría
-                const productosPorCategoria = {};
-                this.productosCache.forEach(producto => {
-                    if (producto.id_categoria) {
-                        if (!productosPorCategoria[producto.id_categoria]) {
-                            productosPorCategoria[producto.id_categoria] = 1;
-                        } else {
-                            productosPorCategoria[producto.id_categoria]++;
-                        }
-                    }
+            mensajePresentacion += `*🛍️ Nuestras Categorías Disponibles:*\n\n`;
+
+            // Contar productos por categoría
+            const productosPorCategoria = {};
+            this.productosCache.forEach(producto => {
+                if (producto.id_categoria) {
+                    productosPorCategoria[producto.id_categoria] = 
+                        (productosPorCategoria[producto.id_categoria] || 0) + 1;
+                }
+            });
+
+            // Ordenar y formatear categorías
+            const categoriasOrdenadas = Array.from(categoriasUnicas)
+                .sort((a, b) => a.localeCompare(b))
+                .map(categoria => {
+                    const cantidadProductos = productosPorCategoria[categoria] || 0;
+                    return `• *${categoria}* (${cantidadProductos} ${cantidadProductos === 1 ? 'producto' : 'productos'})`;
                 });
-    
-                // Ordenar categorías por nombre
-                const categoriasOrdenadas = Array.from(categoriasUnicas)
-                    .sort((a, b) => a.localeCompare(b))
-                    .map(categoria => {
-                        const cantidadProductos = productosPorCategoria[categoria] || 0;
-                        return `• *${categoria}* (${cantidadProductos} ${cantidadProductos === 1 ? 'producto' : 'productos'})`;
-                    });
-    
-                // Agregar categorías al mensaje
-                mensajePresentacion += categoriasOrdenadas.join('\n');
-            }
-    
+
+            mensajePresentacion += categoriasOrdenadas.join('\n');
             mensajePresentacion += `\n\n*¿Cómo puedo ayudarte hoy?*\n`;
             mensajePresentacion += `• Puedes preguntarme por cualquier categoría\n`;
             mensajePresentacion += `• Buscar productos específicos\n`;
             mensajePresentacion += `• O decirme qué estás buscando\n\n`;
             mensajePresentacion += `¡Estoy aquí para ayudarte a encontrar lo que necesitas! 😊\n\n`;
             mensajePresentacion += `*💡 Ejemplo:* Puedes escribir "Quiero ver productos de ${Array.from(categoriasUnicas)[0]}"`;
-    
-            // Enviar el mensaje
-            await this.whatsappClient.sendMessage(`${numeroLimpio}@c.us`, mensajePresentacion);
-    
-            // Registrar el inicio de la conversación en el contexto
-            this.actualizarContextoConversacion(numeroLimpio, 
-                '[Inicio de conversación - Mensaje de presentación enviado]');
-    
-            // Retornar éxito
-            return {
-                success: true,
-                mensaje: 'Mensaje de presentación enviado exitosamente',
-                categoriasMostradas: Array.from(categoriasUnicas)
-            };
-    
+
+            // Intentar enviar el mensaje con reintentos
+            let intentos = 0;
+            const maxIntentos = 3;
+            let error;
+
+            while (intentos < maxIntentos) {
+                try {
+                    // Verificar nuevamente el estado antes de enviar
+                    const estado = await this.whatsappClient.getState().catch(() => null);
+                    if (!estado || estado !== 'CONNECTED') {
+                        throw new Error('Cliente desconectado');
+                    }
+
+                    await this.whatsappClient.sendMessage(
+                        `${numeroLimpio}@c.us`,
+                        mensajePresentacion
+                    );
+
+                    // Si llegamos aquí, el mensaje se envió correctamente
+                    this.actualizarContextoConversacion(
+                        numeroLimpio,
+                        '[Inicio de conversación - Mensaje de presentación enviado]'
+                    );
+
+                    return {
+                        success: true,
+                        mensaje: 'Mensaje de presentación enviado exitosamente',
+                        categoriasMostradas: Array.from(categoriasUnicas),
+                        intentos: intentos + 1
+                    };
+                } catch (err) {
+                    error = err;
+                    intentos++;
+                    if (intentos < maxIntentos) {
+                        // Esperar antes de reintentar
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
+                }
+            }
+
+            // Si llegamos aquí, todos los intentos fallaron
+            throw new Error(`No se pudo enviar el mensaje después de ${maxIntentos} intentos: ${error.message}`);
+
         } catch (error) {
             console.error('Error al enviar mensaje de presentación:', error);
-            throw error;
+            throw {
+                error: 'Error al enviar mensaje de presentación',
+                detalle: error.message,
+                tipo: error.name
+            };
         }
     }
 }
