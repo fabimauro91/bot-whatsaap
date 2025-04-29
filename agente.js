@@ -171,6 +171,7 @@ class Agente {
             console.error('despueed de contextoConversacion');
             
             const promptVendedor = `Cuando inicie una conversacion actue como un vendedor llamado ${this.nombreVendedor}, un vendedor amable y profesional de la tienda ${this.nombreTienda}.
+                                   saludar *buenos días si* es el primer mensaje, los demas mensajes que responda no decir buenos días 
                                   necesitamos verder estos productos: ${contextoProductos}
                                   Responde al siguiente mensaje del cliente: "${mensaje.body}"
                                   sí el cliente escribe alguna palabra de (necesito, quiero, me gustaria), hay que estar atento al complemento de la oracion y buscar entre los productos coincidencia de lo que requiere el cliente
@@ -423,16 +424,11 @@ class Agente {
                 mensajeSolicitud += `*${pedido.variacion_detalle}*\n\n`;
             }
             mensajeSolicitud += `Precio: $${producto.precio_sugerido}\n\n`;
-            mensajeSolicitud += `Para finalizar tu compra, necesito algunos datos:\n`;
-            mensajeSolicitud += `Sique los siguientes pasos\n\n`;
-            mensajeSolicitud += `*1.* Tu nombre completo\n`;
-            mensajeSolicitud += `*2.* Tu correo electrónico\n`;
-            mensajeSolicitud += `*3.* Tu dirección de entrega\n\n`;
-            mensajeSolicitud += `*4.* Tu ciudad de entrega\n`;          
-            mensajeSolicitud += `*Responde primero con tu nombre completo*, luego te pediré los otros datos.\n\n`;
-            mensajeSolicitud += `📌 También puedes:\n`;
-            mensajeSolicitud += `*5.* Escribir "otro producto" para buscar un producto diferente\n`;
-            mensajeSolicitud += `*6.* Escribir "cancelar" para cancelar la compra\n`;
+            mensajeSolicitud += `Para finalizar tu compra, necesito algunos datos personales para el envio:\n`;
+            mensajeSolicitud += `Escribe tu *nombre completo y el Apellido*\n\n`;
+            mensajeSolicitud += `📌 Si deseas anular tu compra puedes:\n`;
+            mensajeSolicitud += `Escribir *otro producto*  o el numero  *5* para buscar un producto diferente\n`;
+            mensajeSolicitud += `Escribir *cancelar*  o  el numero  *6*  para cancelar la compra\n`;
      
             this.actualizarContextoConversacion(message.from, mensajeSolicitud );
             await this.enviarMensaje(message, mensajeSolicitud);
