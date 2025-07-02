@@ -105,7 +105,7 @@ class Agente {
            // fs.writeFileSync('productos.json', JSON.stringify(productosTransformados, null, 2));
             return productosTransformados;
         } catch (error) {
-            console.error('❌ Error al cargar productos desde la API:', error.message);
+            console.error('❌ Error al cargar productos desde la API  jajajaj:', error.message);
             return [];
         }
     }
@@ -164,58 +164,118 @@ class Agente {
 
     async consultarGemini(mensaje, genAI) {
         try {
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-            const contextoProductos = JSON.stringify(this.productosCache, null, 2);
-            console.error('Antes de contextoConversacion');
-            const contextoConversacion = this.getContextoConversacion(mensaje.from);
-            console.error('despueed de contextoConversacion');
-            
-            const promptVendedor = `Cuando inicie una conversacion actue como un vendedor llamado ${this.nombreVendedor}, un vendedor amable y profesional de la tienda ${this.nombreTienda}.
-                                   saludar *buenos días si* es el primer mensaje, los demas mensajes que responda no decir buenos días 
-                                  necesitamos verder estos productos: ${contextoProductos}
-                                  Responde al siguiente mensaje del cliente: "${mensaje.body}"
-                                  sí el cliente escribe alguna palabra de (necesito, quiero, me gustaria), hay que estar atento al complemento de la oracion y buscar entre los productos coincidencia de lo que requiere el cliente
-                                  Mantén un tono amable, profesional y orientado a ventas.
-                                  Si el cliente muestra interés en alguna caegoria, ofrece los producttos relacionados a la categoria.
-                                  tener en cuenta las conversaciones anteriores: "${contextoConversacion}".
-                                  Procurar no extenderse mucho con los textos`;
-
-            console.error('Antes enviar a geini');
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-1.5-flash",
+                generationConfig: {
+                    maxOutputTokens: 300, // Limitar la respuesta
+                    temperature: 0.7
+                }
+            });
+    
+            // Obtener categorías únicas
+            const categorias = this.obtenerCategorias();
+    
+            // Crear el prompt inicial para Gemini
+            const promptVendedor = `
+            Actúa como un vendedor llamado ${this.nombreVendedor} de la tienda ${this.nombreTienda}.
+            Estas son las categorías disponibles: ${categorias.join(', ')}.
+            Mensaje del cliente: "${mensaje.body}".
+            Si el cliente está interesado en una categoría específica, responde con el nombre exacto de la categoría.
+            Si no está interesado en una categoría, responde con un saludo y las categorías disponibles.
+            Responde de manera breve y profesional.
+            `;
+    
+            console.log('Prompt enviado a Gemini:', promptVendedor);
+    
+            // Enviar el prompt a Gemini
             const result = await model.generateContent(promptVendedor);
             const response = await result.response;
-            const textoRespuesta = response.text();
-            console.error('despues de consultar a gemini');
-            // Actualizar el contexto específico de este número
-            this.actualizarContextoConversacion(mensaje.from, textoRespuesta);
-            console.error('despues de actualizarConverzacion');
-            
-            return textoRespuesta;
+            const textoRespuesta = response.text().trim();
+    
+            console.log('Respuesta de Gemini:', textoRespuesta);
+    
+            // Verificar si Gemini detectó una categoría
+            const categoriaDetectada = categorias.find(categoria => textoRespuesta.toLowerCase().includes(categoria.toLowerCase()));
+    
+            if (categoriaDetectada) {
+                // Si se detectó una categoría, manejar la consulta de productos de esa categoría
+                console.log(`Categoría detectada: ${categoriaDetectada}`);
+                return await this.manejarConsultaPorCategoria(mensaje, categoriaDetectada, genAI);
+            } else {
+                // Si no se detectó una categoría, enviar el saludo con las categorías
+                const mensajeSaludo = `
+                *¡Hola! 👋*\n\n
+                Bienvenido a *${this.nombreTienda}* 🏪\n
+                Mi nombre es *${this.nombreVendedor}* y estaré encantado de ayudarte.\n\n
+                Estas son nuestras categorías disponibles:\n
+                ${categorias.map(categoria => `• ${categoria}`).join('\n')}\n\n
+                Por favor, dime qué categoría te interesa para mostrarte los productos disponibles. 😊
+                `;
+                await this.enviarMensaje(mensaje, mensajeSaludo);
+                return mensajeSaludo;
+            }
         } catch (error) {
-            console.error('❌ Error al consultar Gemini:', error.mensaje);
-            return "Lo siento, en este momento no puedo procesar tu mensaje. ¿Te gustaría ver nuestro catálogo de productos?";
+            console.error('❌ Error al consultar Gemini:', error.message || error);
+    
+            if (error.message && error.message.includes('429')) {
+                console.log('Error de cuota excedida en Gemini, esperando para reintentar...');
+                const retryDelay = parseInt(error.retryDelay) || 5000; // Usar retryDelay del error o 5 segundos
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+                return "Lo siento, en este momento no puedo procesar tu mensaje. ¿Te gustaría ver nuestro catálogo de productos?";
+            }
+    
+            if (error.message && error.message.includes('undefined')) {
+                console.log('Error: Respuesta de Gemini no válida.');
+                return "Lo siento, hubo un problema al procesar tu solicitud. Por favor, intenta nuevamente.";
+            }
+    
+            throw error; // Relanzar el error si no es manejable
         }
     }
 
     async consultarGeminiConProductos(mensaje, genAI) {
         try {
-            const contextoProductos = JSON.stringify(this.productosCache, null, 2);
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const contextoConversacion = this.getContextoConversacion(message.from);
+            const productosFiltrados = this.filtrarProductosPorContexto(contextoConversacion);
 
-            const contextoConversacion = this.getContextoConversacion(mensaje.from);
-           
+            if (productosFiltrados.length === 0) {
+                console.log('No se encontraron productos relevantes en el contexto.');
+                return false;
+            }
+
+            const productosSimplificados = productosFiltrados.map(producto => ({
+                nombre_producto: producto.nombre_producto,
+                precio_sugerido: producto.precio_sugerido,
+                cantidad_disponible: producto.cantidad_disponible
+            }));
+
+            const contextoProductos = JSON.stringify(productosSimplificados.slice(0, 10), null, 2); // Limitar a 10 productos
+
             const promptVendedor = `
-            Contexto: Estos son los productos disponibles: ${contextoProductos}
-            Mensaje del usuario: ${mensaje.body}
+            Contexto: Estos son los productos disponibles: ${contextoProductos}.
+            Mensaje del usuario: "${message.body}".
             Si el usuario está preguntando por información o detalles sobre un producto específico, 
             devuelve el nombre exacto del producto como aparece en la lista.
-            Si no está preguntando por un producto específico, devuelve "0".
+            Si no está preguntando por un producto específico (por ejemplo, si es un saludo o un mensaje irrelevante), devuelve "0".
             Solo devuelve el nombre del producto o "0", sin texto adicional.
-            tener esta conversacion anterior: ${contextoConversacion}`;
+            `;
 
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-1.5-flash",
+                generationConfig: {
+                    maxOutputTokens: 300,
+                    temperature: 0.7
+                }
+            });
             const result = await model.generateContent(promptVendedor);
             const response = await result.response;
             const textoRespuesta = response.text().trim();
-            console.error('consulta productos parecidos  '+textoRespuesta);
+            if (textoRespuesta === "0") {
+                console.log("El cliente no está seleccionando un producto.");
+                return false; // Salir del flujo si no hay intención de producto
+            }
+            // console.error('consulta productos parecidos  '+textoRespuesta);
+            console.log(`Respuesta de Gemini para productos: "${textoRespuesta}"`);
             if (textoRespuesta && textoRespuesta !== "0") {
                 this.actualizarContextoConversacion(mensaje.from, textoRespuesta );
                 const producto = this.productosCache.find(p => 
@@ -260,6 +320,12 @@ class Agente {
             }
             return false;
         } catch (error) {
+            if (error.message.includes('429')) {
+                console.log('Error de cuota excedida en Gemini, esperando para reintentar...');
+                const retryDelay = parseInt(error.retryDelay) || 5000; // Usar retryDelay del error o 5 segundos
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+                return "Lo siento, en este momento no puedo procesar tu mensaje. ¿Te gustaría ver nuestro catálogo de productos?";
+            }
             console.error('Error en consultarGeminiConProductos:', error);
             throw error;
         }
@@ -267,42 +333,39 @@ class Agente {
 
     async procesarSolicitudCompra(message, genAI) {
         try {
-            const contextoProductos = JSON.stringify(this.productosCache, null, 2);
+            const contextoConversacion = this.getContextoConversacion(message.from);
+            const productosFiltrados = this.filtrarProductosPorContexto(contextoConversacion);
+
+            if (productosFiltrados.length === 0) {
+                console.log('No se encontraron productos relevantes en el contexto.');
+                return false;
+            }
+
+            const productosSimplificados = productosFiltrados.map(producto => ({
+                nombre_producto: producto.nombre_producto,
+                precio_sugerido: producto.precio_sugerido,
+                cantidad_disponible: producto.cantidad_disponible
+            }));
+
+            const contextoProductos = JSON.stringify(productosSimplificados.slice(0, 10), null, 2); // Limitar a 10 productos
+
+            const promptVendedor = `
+            Objetivo: Detectar si el usuario está expresando intención de comprar un producto.
+            Contexto de la conversación previa:
+            ${contextoConversacion}
+            Mensaje del usuario: "${message.body}"
+            Productos disponibles: ${contextoProductos}
+            Devuelve SOLO el nombre exacto del producto si hay intención de compra o "0" si no hay intención.
+            `;
+
             const model = genAI.getGenerativeModel({ 
                 model: "gemini-1.5-flash",
                 generationConfig: {
-                    temperature: 0.2,  // Temperatura baja para respuestas más precisas
+                    maxOutputTokens: 300,
+                    temperature: 0.7
                 }
             });
 
-            const contextoConversacion = this.getContextoConversacion(message.from);
-    
-            // Prompt para detectar intención de compra y producto específico
-            const promptVendedor = `
-            Objetivo: Detectar si el usuario está expresando intención de comprar un producto.
-            
-            Contexto de la conversación previa:
-            ${contextoConversacion}
-            
-            Mensaje del usuario: "${message.body}"
-            
-            Ten en cuenta los productos por si el cliente elige una variacion: ${contextoProductos}
-
-            Analiza si el mensaje indica una intención de compra. Considera expresiones como:
-            - Afirmaciones directas: "quiero comprarlo", "me lo llevo"
-            - Preguntas sobre compra: "¿cómo puedo comprarlo?", "¿cómo lo adquiero?"
-            - Respuestas afirmativas: "sí", "ok", "está bien" (especialmente si antes se mencionó si quiere obtener el producto)
-            - Interés explícito: "me interesa", "lo necesito"
-            
-            Si detectas intención de compra, busca en el contexto de la conversación cuál fue el último producto mencionado.
-            
-            - Pero aun no es una compra si escribe las palabras: "información", "detalles", "saber mas", "conocer". 
-
-            Devuelve SOLO el nombre exacto del producto si hay intención de compra.
-            Si hay intención de compra y el producto tiene variacion, se adiciona el nombre el id de la variacion elegida ejemplo (camisa spining | 151).
-            Devuelve "0" si no hay clara intención de compra.
-
-            Responde ÚNICAMENTE con el nombre del producto o "0". No incluyas explicaciones ni texto adicional.`;
     
             const result = await model.generateContent(promptVendedor);
             const response = await result.response;
@@ -380,11 +443,16 @@ class Agente {
                     for (const p of this.productosCache) {
                         if (conversacionActual.includes(p.nombre_producto)) {
                             console.log(`Detectada posible intención de compra para: ${p.nombre_producto}`);
+
                             await this.iniciarProcesoCompra(message, p);
                             return true;
                         }
                     }
                 }
+                console.log('No se detectó intención de compra en el mensaje, enviando respuesta genérica...');
+                const retryDelay = parseInt(error.retryDelay) || 5000; // Usar retryDelay del error o 5 segundos
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+                return "Lo siento, en este momento no puedo procesar tu mensaje. ¿Te gustaría ver nuestro catálogo de productos?";
             }
             throw error;
         }
@@ -551,6 +619,12 @@ class Agente {
                         // Eliminar el pedido completado
                         this.clientesEnProcesoDePedido.delete(message.from);
                     
+                        // Eliminar la conversación del usuario
+                        const numeroLimpio = this.cleanPhoneNumber(message.from);
+                        if (this.conversacionesPorNumero.has(numeroLimpio)) {
+                            this.conversacionesPorNumero.delete(numeroLimpio);
+                            console.log(`✅ Conversación eliminada para el número: ${numeroLimpio}`);
+                        }
                         await this.enviarMensaje(message, resumenPedido);
                     } catch (error) {
                         console.error('Error al guardar el pedido:', error);
@@ -596,6 +670,12 @@ class Agente {
                 estado: 'pendiente',
             });
     
+            // Eliminar la conversación del usuario
+            const numeroLimpio = this.cleanPhoneNumber(pedido.telefono);
+            if (this.conversacionesPorNumero.has(numeroLimpio)) {
+                this.conversacionesPorNumero.delete(numeroLimpio);
+                console.log(`✅ Conversación eliminada para el número: ${numeroLimpio}`);
+            }
             return nuevoPedido;
         } catch (error) {
             console.error('Error al guardar en la base de datos:', error);
@@ -798,6 +878,75 @@ class Agente {
                 tipo: error.name
             };
         }
+    }
+
+
+    async manejarConsultaPorCategoria(mensaje, categoria, genAI) {
+        try {
+            const productos = this.obtenerProductosPorCategoria(categoria);
+    
+            if (productos.length === 0) {
+                await this.enviarMensaje(mensaje, `Lo siento, no tenemos productos disponibles en la categoría "${categoria}".`);
+                return;
+            }
+    
+            const productosSimplificados = productos.map(producto => ({
+                nombre_producto: producto.nombre_producto,
+                precio_sugerido: producto.precio_sugerido,
+                cantidad_disponible: producto.cantidad_disponible
+            }));
+    
+            const contextoProductos = JSON.stringify(productosSimplificados.slice(0, 10), null, 2); // Limitar a 10 productos
+    
+            const promptVendedor = `
+            Actúa como un vendedor llamado ${this.nombreVendedor} de la tienda ${this.nombreTienda}.
+            Estos son los productos disponibles en la categoría "${categoria}": ${contextoProductos}.
+            Mensaje del cliente: "${mensaje.body}".
+            Responde de manera breve y profesional.
+            `;
+    
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-1.5-flash",
+                generationConfig: {
+                    maxOutputTokens: 300,
+                    temperature: 0.7
+                }
+            });
+    
+            const result = await model.generateContent(promptVendedor);
+            const response = await result.response;
+            const textoRespuesta = response.text();
+    
+            await this.enviarMensaje(mensaje, textoRespuesta);
+            return textoRespuesta;
+        } catch (error) {
+            console.error('Error en manejarConsultaPorCategoria:', error);
+            await this.enviarMensaje(mensaje, 'Lo siento, hubo un problema al procesar tu solicitud.');
+        }
+    }
+    obtenerCategorias() {
+        const categoriasUnicas = new Set();
+        this.productosCache.forEach(producto => {
+            if (producto.id_categoria) {
+                categoriasUnicas.add(producto.id_categoria);
+            }
+        });
+        return Array.from(categoriasUnicas);
+    }
+
+    obtenerProductosPorCategoria(categoria) {
+        return this.productosCache.filter(producto => producto.id_categoria === categoria);
+    }
+
+    filtrarProductosPorContexto(contexto) {
+        const categorias = this.obtenerCategorias();
+        const categoriaDetectada = categorias.find(categoria => contexto.toLowerCase().includes(categoria.toLowerCase()));
+    
+        if (categoriaDetectada) {
+            return this.productosCache.filter(producto => producto.id_categoria === categoriaDetectada);
+        }
+    
+        return []; // Si no se detecta una categoría, devolver una lista vacía
     }
 }
 
